@@ -189,15 +189,39 @@ public class App {
     public static void main(String[] args) {
         new App();
     }
-    App() {
+    class Vector {
+        float w;
+        float x;
+        float y;
+        float z;
+
+        Vector(float x, float y, float z) {
+            this(0, x, y, z);
+        }
+        Vector(float w, float x, float y, float z) {
+            this.w = w;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        void scale(float magnitude) {
+            x *= magnitude;
+            y *= magnitude;
+            z *= magnitude;
+        }
+    }
+    private App() {
         //main start flight
         System.out.println("Started");
+
+        //initializeFlaps();
+        sensorData();
+
         GpioPinDigitalOutput STATUS_LIGHT = getDigitalGPIO(0);
         STATUS_LIGHT.high();
-        //initializeFlaps();
 
         //TODO get sensor data in Java realtime
-        sensorData();
         /*
         OPTIONS:
             could port deprecated python library to Pi4J
@@ -245,74 +269,57 @@ public class App {
         }
     }
 
-    private byte writeSensorByte(Serial sensor, byte sensorRegister, byte writeData) throws IOException, SensorException {
-        byte[] command = {
-                (byte)0xAA, // start byte
-                (byte)0x00, // main write
-                sensorRegister, // register address
-                (byte)0x01, // length
-                writeData // consecutive bytes requested
-        };
-        System.out.print("Writing: "+toHex(command));
-
-        sensor.write(command,0,command.length);
-        byte[] response = sensor.read(2);
-        if ((response[0] & 0xFF) != 0xEE) {
-            throw new SensorException("Bad write Response (EE: ...) != ("+toHex(response)+")");
-        }
-        if ((response[1] & 0xFF) != 0x01) {
-            throw new SensorException("Bad write Status (EE:01) != ("+toHex(response)+")");
-        }
-        return response[1];
-    }
-
-    private byte[] readSensorRegisterBytes(Serial sensor, byte sensorRegister) throws IOException, SensorException {
-        return readSensorRegisterBytes(sensor, sensorRegister, (byte)0x01);
-    }
-    private byte[] readSensorRegisterBytes(Serial sensor, byte sensorRegister, byte unsignedCount) throws IOException, SensorException {
-        byte[] command = {
-                (byte)0xAA, // start byte
-                (byte)0x01, // main read
-                (byte)(sensorRegister & 0xFF), // register address
-                (byte)(unsignedCount & 0xFF) // consecutive bytes requested
-        };
-        System.out.print("Sending: " + toHex(command));
-        sensor.write(command,0,command.length);
-        byte[] response = sensor.read(2);
-        if ((response[0] & 0xFF) != 0xBB) {
-            throw new SensorException("Bad read Response (BB: ...) != ("+toHex(response)+")");
-        }
-        int bytesToRead = response[1] & 0xFF;
-        //System.out.println("Good Response (BB). Going to read "+bytesToRead+" bytes");
-        return sensor.read(bytesToRead);
-    }
-
     private void sensorData() {
         try {
+            BNO055 sensor = new BNO055();
+
+            //todo simple weather info
+            for (int i = 0; i < 50; i++) {
+                System.out.println("Temperature: "+sensor.getTemperature());
+                Vector euler = sensor.getEuler();
+                System.out.println("Heading="+euler.x+" Roll="+euler.y+" Pitch="+euler.z);
+                Vector q = sensor.getQuaternion();
+                System.out.println("W="+q.w+"X="+q.x+"Y="+q.y+"Z="+q.z);
+                //sleep(5000);
+            }
+
+            sensor.close();
+        } catch (IOException | SensorException e) {
+            e.printStackTrace();
+        }
+    }
+
+    class BNO055 {
+        //main the serial connection
+        private Serial sensor;
+        //functions relating to init and deconstruct
+        BNO055() throws IOException, SensorException {
+            //main init serial connection
+            System.out.println("Starting up BNO055 serial");
             SerialConfig config = new SerialConfig();
-            Serial serial = SerialFactory.createInstance();
+            sensor = SerialFactory.createInstance();
             config.device(RaspberryPiSerial.S0_COM_PORT)
                     .baud(Baud._115200)
                     .dataBits(DataBits._8)
                     .parity(Parity.NONE)
                     .stopBits(StopBits._1)
                     .flowControl(FlowControl.NONE);
-            serial.open(config);
+            sensor.open(config);
 
             //main put it in config mode (just to be sure...)
             System.out.println("Going to config mode");
-            writeSensorByte(serial, BNO055_OPR_MODE_ADDR, OPERATION_MODE_CONFIG);
+            writeSensorByte(BNO055_OPR_MODE_ADDR, OPERATION_MODE_CONFIG);
             System.out.println("Done Going to config mode");
 
             //read current mode (should be config)
-            System.out.print("State: "+ toHex(readSensorRegisterBytes(serial, BNO055_OPR_MODE_ADDR)));
+            System.out.print("State: "+ toHex(readSensorRegisterByte(BNO055_OPR_MODE_ADDR)));
 
             //print chip ID
-            System.out.print("Chip ID: " + toHex(readSensorRegisterBytes(serial, BNO055_CHIP_ID_ADDR)));
+            System.out.print("Chip ID: " + toHex(readSensorRegisterByte(BNO055_CHIP_ID_ADDR)));
 
             //main go to page 0 (sensor config and output)
             System.out.println("Going to page 0");
-            writeSensorByte(serial, BNO055_PAGE_ID_ADDR, (byte)0x00);
+            writeSensorByte(BNO055_PAGE_ID_ADDR, (byte)0x00);
 
             //main set "power model" to normal mode
             //System.out.println("Going to normal power mode");
@@ -320,30 +327,133 @@ public class App {
 
             //main set SYS_TRIGGER_ADDR so it's not resetting or test-ing or whatever
             System.out.println("Setting SYS TRIGGER off");
-            writeSensorByte(serial, BNO055_SYS_TRIGGER_ADDR, (byte)0x00);
+            writeSensorByte(BNO055_SYS_TRIGGER_ADDR, (byte)0x00);
 
             //main "The default operation mode after power-on is CONFIGMODE". Put it in NDOF mode.
             System.out.println("Going to NDOF mode");
-            writeSensorByte(serial, BNO055_OPR_MODE_ADDR, OPERATION_MODE_NDOF);
+            writeSensorByte(BNO055_OPR_MODE_ADDR, OPERATION_MODE_NDOF);
             System.out.println("Done Going to NDOF mode");
+            //main wait 50 millis (datasheet recommends 19 millis, but be safe)
+            sleep(50);
+        }
+        void close() throws IOException {
+            sensor.close();
+        }
+        //functions relating to serial communication
+        private byte[] readSensorRegisterBytes(byte sensorRegister, byte unsignedCount) throws IOException, SensorException {
+            byte[] command = {
+                    (byte)0xAA, // start byte
+                    (byte)0x01, // main read
+                    (byte)(sensorRegister & 0xFF), // register address
+                    (byte)(unsignedCount & 0xFF) // consecutive bytes requested
+            };
+            System.out.print("Sending: " + toHex(command));
+
+            //testing sleep to make EE:07 less likely
             sleep(50);
 
-            //todo simple weather info
-            for (int i = 0; i < 1; i++) {
-                byte[] temp = readSensorRegisterBytes(serial, (byte)0x35);
-                System.out.print("Temperature: "+toHex(temp));
-                sleep(1000);
+            sensor.write(command,0,command.length);
+            byte[] response = sensor.read(2);
+            if ((response[0] & 0xFF) != 0xBB) {
+                throw new SensorException("Bad read Response (BB: ...) != ("+toHex(response)+")");
             }
+            int bytesToRead = response[1] & 0xFF;
+            //System.out.println("Good Response (BB). Going to read "+bytesToRead+" bytes");
+            return sensor.read(bytesToRead);
+        }
+        private byte writeSensorByte(byte sensorRegister, byte writeData) throws IOException, SensorException {
+            byte[] command = {
+                    (byte)0xAA, // start byte
+                    (byte)0x00, // main write
+                    sensorRegister, // register address
+                    (byte)0x01, // length
+                    writeData // consecutive bytes requested
+            };
+            System.out.print("Writing: "+toHex(command));
 
-            serial.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-            //TODO restart sensor?
-        } catch (SensorException e) {
-            System.out.println("SensorException: "+e.toString());
-            //TODO restart sensor?
+            sensor.write(command,0,command.length);
+            byte[] response = sensor.read(2);
+            if ((response[0] & 0xFF) != 0xEE) {
+                throw new SensorException("Bad write Response (EE: ...) != ("+toHex(response)+")");
+            }
+            if ((response[1] & 0xFF) != 0x01) {
+                throw new SensorException("Bad write Status (EE:01) != ("+toHex(response)+")");
+            }
+            return response[1];
+        }
+        //functions relating to abstract sensor logic
+        private byte readSensorRegisterByte(byte sensorRegister) throws IOException, SensorException {
+            return readSensorRegisterBytes(sensorRegister, (byte)0x01)[0];
+        }
+        private Vector readVector(byte firstRegister, int shortCount) throws IOException, SensorException {
+            byte[] sensorBytes = readSensorRegisterBytes(firstRegister, (byte)(shortCount*2 & 0xFF));
+            short[] out = new short[shortCount];
+            for (int i = 0; i < shortCount; i++) {
+                out[i] = (short)(((sensorBytes[i*2+1] & 0xFF) << 8) | (sensorBytes[i*2] & 0xFF));
+            }
+            if (shortCount == 3) {
+                return new Vector(out[0],out[1],out[2]);
+            } else if (shortCount == 4) {
+                return new Vector(out[0],out[1],out[2], out[3]);
+            }
+            throw new SensorException("Read vector too long of length "+shortCount);
+        }
+
+        //funcitons relating to very abstract reading
+        Vector getEuler() throws IOException, SensorException {
+            Vector v = readVector(BNO055_EULER_H_LSB_ADDR, 3);
+            //scale euler; see datasheet
+            v.scale(1f/16);
+            return v;
+        }
+        //magnetometer in micro-teslas
+        Vector getMagnetometer() throws IOException, SensorException {
+            Vector v = readVector(BNO055_MAG_DATA_X_LSB_ADDR, 3);
+            //scale euler; see datasheet
+            v.scale(1f/16);
+            return v;
+        }
+        //gyroscope (angular velocity) in degrees per second
+        Vector getAngularVelocity() throws IOException, SensorException {
+            Vector v = readVector(BNO055_GYRO_DATA_X_LSB_ADDR, 3);
+            //scale gyroscope; see datasheet
+            v.scale(1f/900);
+            return v;
+        }
+        //vector of acceleration (in meters/second^2)
+        Vector getAcceleration() throws IOException, SensorException {
+            Vector v = readVector(BNO055_ACCEL_DATA_X_LSB_ADDR, 3);
+            //scale accelerometer; see datasheet
+            v.scale(1f/100);
+            return v;
+        }
+        //vector of linear acceleration (acceleration not counting gravity) (in meters/second^2)
+        Vector getLinearAcceleration() throws IOException, SensorException {
+            Vector v = readVector(BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR, 3);
+            //scale linear acceleration; see datasheet
+            v.scale(1f/100);
+            return v;
+        }
+        //vector of gravity (in meters/second^2)
+        Vector getGravity() throws IOException, SensorException {
+            Vector v = readVector(BNO055_LINEAR_ACCEL_DATA_X_LSB_ADDR, 3);
+            //scale linear acceleration; see datasheet
+            v.scale(1f/100);
+            return v;
+        }
+        //quaternion w,x,y,z
+        Vector getQuaternion() throws IOException, SensorException {
+            Vector v = readVector(BNO055_QUATERNION_DATA_W_LSB_ADDR, 4);
+            //scale quaternion; see datasheeet 3.6.5.5
+            v.scale(1f/ (1 << 14));
+            return v;
+        }
+        //temperature in Celsius
+        byte getTemperature() throws IOException, SensorException {
+            return readSensorRegisterByte(BNO055_TEMP_ADDR);
         }
     }
+
 
     private void initializeFlaps() {
         //run softPwmCreate on every GPIO in flaps (unless it's -1, then it isn't yet made)
@@ -367,7 +477,7 @@ public class App {
         }
     }
 
-    private String toHex(byte[] arr) {
+    private String toHex(byte... arr) {
         StringBuilder ret = new StringBuilder();
         for (byte b : arr) {
             ret.append(String.format("%02X",b & 0xFF)).append(":");
@@ -375,6 +485,7 @@ public class App {
         ret.append("\n");
         return ret.toString();
     }
+
     private void sleep(long millis) {
         try {
             Thread.sleep(millis);
@@ -382,6 +493,7 @@ public class App {
             e.printStackTrace();
         }
     }
+
     private GpioPinDigitalOutput getDigitalGPIO(int addr) {
         GpioPinDigitalOutput ret;
         if (pinMap.containsKey(addr)) {
