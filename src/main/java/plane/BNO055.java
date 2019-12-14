@@ -4,42 +4,51 @@ import com.pi4j.io.serial.*;
 
 import java.io.IOException;
 import java.util.Arrays;
-import plane.App;
 
 //reads sensor and abstracts output
 class BNO055 {
+
+    //todo allow the plane to still fly manually if it loses connection to the sensor
 
     // <editor-fold defaultstate="collapsed" desc=" Useful Variables and getters ">
     private Vector acceleration;
     Vector getAcceleration() {return acceleration;}
     private final float SCALE_ACCELERATION = 1f/100;
     private final int SIZE_ACCELERATION = 3;
+
     private Vector magnitude;
     Vector getMagnitude() {return magnitude;}
     private final float SCALE_MAGNITUDE = 1f/16;
     private final int SIZE_MAGNITUDE = 3;
+
     private Vector gyroscope;
     Vector getGyroscope() {return gyroscope;}
     private final float SCALE_GYROSCOPE = 1f/900;
     private final int SIZE_GYROSCOPE = 3;
+
     private Vector euler;
     Vector getEuler() {return euler;}
     private final float SCALE_EULER = 1f/16;
     private final int SIZE_EULER = 3;
+
     private Vector quaternion;
     Vector getQuaternion() {return quaternion;}
     private final float SCALE_QUATERNION = 1f/ (1 << 14);
     private final int SIZE_QUATERNION = 4;
+
     private Vector linearAcceleration;
     Vector getLinearAcceleration() {return linearAcceleration;}
     private final float SCALE_LINEAR_ACCELERATION = 1f/100;
     private final int SIZE_LINEAR_ACCELERATION = 3;
+
     private Vector gravity;
     Vector getGravity() {return gravity;}
     private final float SCALE_GRAVITY = 1f/100;
     private final int SIZE_GRAVITY = 3;
+
     private byte temperature;
     byte getTemperature() {return temperature;}
+
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc=" Sensor Address Constants ">
@@ -265,7 +274,7 @@ class BNO055 {
             }
         } while (!hasStartedSensor);
         //main wait 50 millis (datasheet recommends 19 millis, but be patient)
-        App.sleep(50);
+        Plane.sleep(50);
     }
 
     class SensorException extends Exception {
@@ -295,7 +304,7 @@ class BNO055 {
         //System.out.print("Sending: " + toHex(command));
 
         //testing sleep to make EE:07 less likely
-        //App.sleep(50);
+        //Plane.sleep(50);
 
         serial.write(command,0,command.length);
         byte[] response = serial.read(2);
