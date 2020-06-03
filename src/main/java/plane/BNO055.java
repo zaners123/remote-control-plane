@@ -9,6 +9,28 @@ import java.util.Arrays;
 class BNO055 {
 
     //todo allow the plane to still fly manually if it loses connection to the sensor
+    //main USE THIS TO VERIFY SENSOR OUTPUT
+    boolean sensorWorking = false;
+
+    //todo enum would be hard to return as
+    /*enum SensorOutput {
+        acceleration(1f/100,    3),
+        magnutide   (1f/16,     3),
+        gyroscope   (1f/900,    3),
+        euler       (1f/16,     3),
+        quaternion  (1f/(1 << 14), 4);
+        //todo rest of enum
+        final float SCALE;
+        final int SIZE;
+
+
+
+
+        SensorOutput(float SCALE,   int SIZE) {
+            this.SCALE = SCALE;
+            this.SIZE = SIZE;
+        }
+    }*/
 
     // <editor-fold defaultstate="collapsed" desc=" Useful Variables and getters ">
     private Vector acceleration;
@@ -212,9 +234,9 @@ class BNO055 {
 
     //main the serial connection
     private Serial serial;
-    BNO055() {
+
+    private void initialize() {
         //main init serial connection
-        System.out.println("Starting up BNO055 serial");
         SerialConfig config = new SerialConfig();
         serial = SerialFactory.createInstance();
         config.device(RaspberryPiSerial.S0_COM_PORT)
@@ -229,11 +251,11 @@ class BNO055 {
                 serial.open(config);
                 hasOpenedSerial = true;
             } catch (IOException e) {
-                System.out.println("Can't open serial connection");
+                System.err.println("Can't open serial connection");
                 e.printStackTrace();
             }
         } while (!hasOpenedSerial);
-
+        System.out.println("Sensor serial opened");
         boolean hasStartedSensor = false;
         do {
             try {
@@ -243,12 +265,10 @@ class BNO055 {
                 System.out.println("\tDone Going to config mode");
 
                 //read current mode (should be config)
-                System.out.print("\tState: ");
-                System.out.println(toHex(readSensorRegisterByte(BNO055_OPR_MODE_ADDR)));
+                System.out.print("\tState: " + toHex(readSensorRegisterByte(BNO055_OPR_MODE_ADDR)));
 
                 //print chip ID
-                System.out.print("\tChip ID: ");
-                System.out.println(toHex(readSensorRegisterByte(BNO055_CHIP_ID_ADDR)));
+                System.out.print("\tChip ID: " + toHex(readSensorRegisterByte(BNO055_CHIP_ID_ADDR)));
 
                 //main go to page 0 (sensor config and output)
                 System.out.println("\tGoing to page 0");
@@ -269,12 +289,19 @@ class BNO055 {
                 System.out.println("\tDone Going to NDOF mode");
                 hasStartedSensor = true;
             } catch (SensorException | IOException e) {
-                System.out.println("Error while configuring sensor");
+                System.err.println("Error while configuring sensor");
                 e.printStackTrace();
             }
         } while (!hasStartedSensor);
         //main wait 50 millis (datasheet recommends 19 millis, but be patient)
         Plane.sleep(50);
+        System.out.println("sensor successfully set up");
+        sensorWorking = true;
+    }
+
+    BNO055() {
+        System.out.println("Attempting to start BNO055 (in new thread)");
+        new Thread(this::initialize).start();
     }
 
     class SensorException extends Exception {
@@ -363,6 +390,10 @@ class BNO055 {
      * Takes about 100ms to run
      * @return boolean true if successful retrieval*/
     boolean getUpdatedSensorData() {
+        if (!sensorWorking) {
+            System.err.println("Someone tried updating sensor data, but sensor is not yet set up");
+            return false;
+        }
         try {
             //gets ALL sensor information
             byte[] sensorBytes = readSensorRegisterBytes(BNO055_ACCEL_DATA_X_LSB_ADDR, (byte)(45 & 0xFF));
@@ -385,6 +416,7 @@ class BNO055 {
         } catch (IOException e) {
             System.out.println("Reading all sensors failed IOEXception");
             e.printStackTrace();
+            return false;
         }
         return true;
     }

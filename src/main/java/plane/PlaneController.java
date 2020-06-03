@@ -7,12 +7,18 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 /**
- The main abstract class in this whole thing. Reads sensors and user input, writes propController and flapController.
+ The main abstract class in this whole thing. Reads sensors and user input, writes pwmController and flapController.
  */
-class PlaneControls {
-    PlaneControls() {
-
+class PlaneController {
+    PlaneController() {
+        initialize();
     }
+
+    void initialize() {
+        new Thread(this::networkThread).start();
+        new Thread(this::controlThread).start();
+    }
+
     //A super-optional feature assuming you want to actually control the damn thing. Starts a server on PORT, reading input
     void networkThread() {
         ServerSocket serverSocket = null;
@@ -49,7 +55,7 @@ class PlaneControls {
     //percent throttle (0=off, 100=full)
     float inputThrottle = 0;
     //roll (AILERON) offset percent (-100=counterclockwise/left,    0=straight, 100=clockwise/right)
-    float inputRoll = 0;
+    float inputTurn = 0;
     //pitch (ELEVATOR) offset percent (-100=down,   0=straight,   100=up)
     float inputPitch = 0;
 
@@ -63,12 +69,7 @@ class PlaneControls {
 
     void controlThread() {
         while (Plane.keepRunningThreads) {
-            Plane.sensor.getUpdatedSensorData();
-            //todo demystify
-            float power = Plane.sensor.getEuler().y/180;
-            power = (power<=1) ? (-power) : (2-power);
-            int writeval = (int)(5*power);
-            System.out.println("Euler: "+Plane.sensor.getEuler().toString() +" into "+writeval);
+            boolean useSensorData = Plane.sensor.getUpdatedSensorData();
             long start = System.currentTimeMillis();
             //todo base off of inputs
 
@@ -76,16 +77,11 @@ class PlaneControls {
             //todo implement differential thrust (when turning, alternate ailerons, point rudder like a tire, increase outer throttle, decrease inner throttle)
 
             //todo autopilot mode that bases input off of sensor (but user input always overrides)
-            Plane.flapController.writeFlap(FlapController.FlapPin.RUDDER,           writeval);
-            //todo aileron differential (use rudder when turning so tail doesn't lower?)
-            Plane.flapController.writeFlap(FlapController.FlapPin.LEFT_AILERON,     writeval);
-            Plane.flapController.writeFlap(FlapController.FlapPin.RIGHT_AILERON,    writeval);
-            Plane.flapController.writeFlap(FlapController.FlapPin.LEFT_ELEVATOR,    writeval);
-            Plane.flapController.writeFlap(FlapController.FlapPin.RIGHT_ELEVATOR,   writeval);
+            Plane.pwmController.writePercent(PWMController.PwmPin.LEFT_AILERON,           50);
 
 
             //TODO prop controls here, too
-//            Plane.propController.writeProp(0);
+//            Plane.pwmController.writePercent(0);
 
 
             System.out.println("Control thread takes "+(System.currentTimeMillis() - start)+"ms");
