@@ -1,5 +1,9 @@
 package CarClient;
 
+import Car.module.Horn;
+import Car.module.Kill;
+import Car.module.Manual;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import javax.swing.*;
@@ -7,99 +11,69 @@ import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetSocketAddress;
-import java.net.SocketException;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.*;
+import java.util.TreeSet;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-
 //todo new InetSocketAddress("127.0.0.1", port) somethin like that
 //todo basic visuals
 //todo maybe some sort of web view for camera???
-
-
 
 public class CarClient {
 
 	private static boolean running = true;
 	private static final String ip = "192.168.0.252";
 	private static final int port = 50303;
-	private static final JSONObject KILL_OBJECT = new JSONObject().put("kill","kill");
-
 	private InetSocketAddress SEND_ADDR = new InetSocketAddress(ip, port);
-
+//	private static final JSONObject KILL_OBJECT = new JSONObject().put("kill","kill");
 	private int manualPowerLevel = 100;
-
 	private final Font twentyFont = new Font("Default", Font.BOLD, 20);
+
+	TreeSet<String> modulesEnabled = new TreeSet<>();
 
 	//ui
 	Panel panel;
-
+	//to send/recieve stuff to car
 	static DatagramSocket sock;
-
 	//map of pressed keys
-	HashMap<Integer,Boolean> pressedMap = new HashMap<>();
-
+	TreeSet<Integer> heldKeys = new TreeSet<>();
 	//for heartbeat
-	Heart heart;
+	ScheduledExecutorService heart;
 
-	class Heart {
-		ScheduledExecutorService service;
-		Heart() {
-			service = Executors.newScheduledThreadPool(1);
-			service.scheduleAtFixedRate(this::heartbeat, 0, 250, TimeUnit.MILLISECONDS);
-		}
 
-		void done() {
-			service.shutdown();
-		}
+	void done() {
+		heart.shutdown();
+	}
 
-		void heartbeat() {
-//			System.out.println("BEAT");
-			int left = 0;
-			int right = 0;
-			for(Map.Entry<Integer,Boolean> e : pressedMap.entrySet()) {
-				boolean manualMovement = false;
-				switch (e.getKey()) {
-					case KeyEvent.VK_S:
-						manualMovement = true;
-						if (!e.getValue()) continue;
-						left=-manualPowerLevel;
-						right=-manualPowerLevel;
-						break;
-					case KeyEvent.VK_W:
-						manualMovement = true;
-						if (!e.getValue()) continue;
-						left=manualPowerLevel;
-						right=manualPowerLevel;
-						break;
-					case KeyEvent.VK_A:
-						manualMovement = true;
-						if (!e.getValue()) continue;
-						left=-manualPowerLevel;
-						right=manualPowerLevel;
-						break;
-					case KeyEvent.VK_D:
-						manualMovement = true;
-						if (!e.getValue()) continue;
-						left=manualPowerLevel;
-						right=-manualPowerLevel;
-						break;
-				}
-			}
-			sendRequest(new JSONObject()
-					.put("manualSpeeds",
-							new JSONObject()
-									.put("left",left)
-									.put("right",right)
-									.put("ms",1000)
-					));
+	void heartbeat() {
+		JSONObject toSend = new JSONObject()
+				.put("modules", new JSONArray(modulesEnabled.toArray()));
+
+		//manual module
+		int left = 0;
+		int right = 0;
+		if (heldKeys.contains(KeyEvent.VK_W)) {
+			left=manualPowerLevel;
+			right=manualPowerLevel;
+		} else if (heldKeys.contains(KeyEvent.VK_S)) {
+			left=-manualPowerLevel;
+			right=-manualPowerLevel;
+		} else if (heldKeys.contains(KeyEvent.VK_A)) {
+			left=-manualPowerLevel;
+			right=manualPowerLevel;
+		} else if (heldKeys.contains(KeyEvent.VK_D)) {
+			left=manualPowerLevel;
+			right=-manualPowerLevel;
 		}
+		toSend = toSend.put(Manual.getName(),new JSONObject()
+				.put("left",left)
+				.put("right",right)
+				.put("ms",100*Car.Car.TIME_MULTIPLIER)
+		);
+
+		sendRequest(toSend);
 	}
 
 	class Panel extends JPanel {
@@ -113,7 +87,6 @@ public class CarClient {
 	}
 
 	CarClient() {
-
 		try {
 			sock = new DatagramSocket();
 		} catch (SocketException e) {
@@ -122,7 +95,9 @@ public class CarClient {
 			System.exit(1);
 		}
 
-		heart = new Heart();
+		heart = Executors.newScheduledThreadPool(2);
+		heart.scheduleAtFixedRate(this::heartbeat, 0, 25*Car.Car.TIME_MULTIPLIER, TimeUnit.MILLISECONDS);
+
 		panel = new Panel();
 
 		JFrame disp = new JFrame("Plane Client (This is Laptop)");
@@ -152,11 +127,11 @@ public class CarClient {
 		new CarClient();
 	}
 
-
 	/**
 	 * @param request - The JSON request to be sent, formatted according to the CarController protocol
+	 * @return response from car
 	 * */
-	void sendRequest(JSONObject request) {
+	JSONObject sendRequest(JSONObject request) {
 		byte[] requestData = request.toString().getBytes();
 		if (requestData.length> 1024) {
 			System.err.println("AH HECK THIS PACKET MIGHT BE TOO LARGE FOR UDP");
@@ -165,11 +140,19 @@ public class CarClient {
 		System.out.println("Sending "+request.toString());
 		DatagramPacket packet = new DatagramPacket(requestData,requestData.length, SEND_ADDR);
 		try {
+			sock.setSoTimeout(1000);
 			sock.send(packet);
+			sock.receive(packet);
+			String response = new String(packet.getData());
+			System.out.println("CAR responded with "+response);
+			return new JSONObject(response);
+		} catch (SocketTimeoutException timeout) {
+			System.err.println("UDP timeout");
 		} catch (IOException e) {
 			e.printStackTrace();
 			System.err.println("Couldn't send UDP");
 		}
+		return null;
 	}
 
 	private void sleep(int ms) {
@@ -177,30 +160,42 @@ public class CarClient {
 	}
 
 	void keyUsed (int id, boolean pressed) {
+
 		//already held
-		if (pressed == pressedMap.getOrDefault(id,!pressed)) return;
+		if (pressed && heldKeys.contains(id)) return;
 
 		if (pressed) {
-			//control keys
-			switch (id) {
-				case KeyEvent.VK_0:manualPowerLevel=0;  return;
-				case KeyEvent.VK_1:manualPowerLevel=11; return;
-				case KeyEvent.VK_2:manualPowerLevel=22; return;
-				case KeyEvent.VK_3:manualPowerLevel=33; return;
-				case KeyEvent.VK_4:manualPowerLevel=44; return;
-				case KeyEvent.VK_5:manualPowerLevel=55; return;
-				case KeyEvent.VK_6:manualPowerLevel=66; return;
-				case KeyEvent.VK_7:manualPowerLevel=77; return;
-				case KeyEvent.VK_8:manualPowerLevel=88; return;
-				case KeyEvent.VK_9:manualPowerLevel=100;return;
-				case KeyEvent.VK_M:sendRequest(new JSONObject().put("state","manual"));return;
-				case KeyEvent.VK_K:sendRequest(KILL_OBJECT);return;
-			}
+			heldKeys.add(id);
+		} else {
+			heldKeys.remove(id);
 		}
 
-		pressedMap.put(id,pressed);
+		//control keys
+		switch (id) {
+			//speed settings
+			case KeyEvent.VK_0:manualPowerLevel=0;  return;
+			case KeyEvent.VK_1:manualPowerLevel=11; return;
+			case KeyEvent.VK_2:manualPowerLevel=22; return;
+			case KeyEvent.VK_3:manualPowerLevel=33; return;
+			case KeyEvent.VK_4:manualPowerLevel=44; return;
+			case KeyEvent.VK_5:manualPowerLevel=55; return;
+			case KeyEvent.VK_6:manualPowerLevel=66; return;
+			case KeyEvent.VK_7:manualPowerLevel=77; return;
+			case KeyEvent.VK_8:manualPowerLevel=88; return;
+			case KeyEvent.VK_9:manualPowerLevel=100;return;
+			//module settings
+			case KeyEvent.VK_M:modulesEnabled.add(Manual.getName());break;
+			case KeyEvent.VK_H:
+				if (pressed) {
+					modulesEnabled.add(Horn.getName());
+				} else {
+					modulesEnabled.remove(Horn.getName());
+				}
+				break;
+			case KeyEvent.VK_K:modulesEnabled.add(Kill.getName());break;
+		}
 
 		//update from key
-		heart.heartbeat();
+		new Thread(this::heartbeat).start();
 	}
 }

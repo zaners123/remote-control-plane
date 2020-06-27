@@ -27,10 +27,10 @@ public class L298NDriver {
 			in4Loc = swapB;
 		}
 
-		in1 = gpio.Controller.getDigitalGPIO(in1Loc);
-		in2 = gpio.Controller.getDigitalGPIO(in2Loc);
-		in3 = gpio.Controller.getDigitalGPIO(in3Loc);
-		in4 = gpio.Controller.getDigitalGPIO(in4Loc);
+		in1 = gpio.Controller.getDigitalGPIOOutput(in1Loc);
+		in2 = gpio.Controller.getDigitalGPIOOutput(in2Loc);
+		in3 = gpio.Controller.getDigitalGPIOOutput(in3Loc);
+		in4 = gpio.Controller.getDigitalGPIOOutput(in4Loc);
 		SoftPwm.softPwmCreate(enaLoc, 0, 100);
 		SoftPwm.softPwmCreate(enbLoc, 0, 100);
 		this.enaLoc = enaLoc;

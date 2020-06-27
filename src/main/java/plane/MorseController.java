@@ -120,7 +120,7 @@ class MorseController implements Closeable {
 
     MorseController(int gpio, int msUnitLength) {
     	if (gpio<0) return;
-        morsePinOut = Controller.getDigitalGPIO(gpio);
+        morsePinOut = Controller.getDigitalGPIOOutput(gpio);
         this.msUnitLength = msUnitLength;
     }
 

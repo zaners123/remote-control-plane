@@ -6,7 +6,7 @@ import gpio.Controller;
 class StatusLight implements Runnable {
     public void run() {
         if (Plane.GPIO_STATUS_LIGHT < 0) return;
-        GpioPinDigitalOutput statusLight = Controller.getDigitalGPIO(Plane.GPIO_STATUS_LIGHT);
+        GpioPinDigitalOutput statusLight = Controller.getDigitalGPIOOutput(Plane.GPIO_STATUS_LIGHT);
         while (Plane.keepRunningThreads) {
             statusLight.high();
             Plane.sleep(250);

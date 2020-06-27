@@ -22,7 +22,7 @@ public class JsonServer {
 	DatagramPacket getPacket() throws IOException {
 		DatagramPacket packet = new DatagramPacket(new byte[1024],1024);
 		sock.receive(packet);
-		System.out.println("RECEIVED PACKET");
+		//System.out.println("RECEIVED PACKET");
 		return packet;
 	}
 	/*JSONObject getJson() throws IOException {

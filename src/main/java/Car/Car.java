@@ -1,27 +1,41 @@
 package Car;
 
+import Car.module.Horn;
+import Car.module.Kill;
 import Car.module.Manual;
-import Car.module.Off;
+import Car.module.HC_SR04;
 import gpio.L298NDriver;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.io.StringReader;
 import java.net.DatagramPacket;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.TreeMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
+/**
+ * This is CARLOS (Car Lightweight Operating System)
+ *
+ * It contains a modular hardware control system
+ *
+ *
+ * */
 public class Car {
 
-	boolean running = true;
+
+
+	//lower to send more packets and to stop the car quicker on lost connection
+	public static final int TIME_MULTIPLIER = 5;
+
+	private static final boolean DEBUG = true;
+	static boolean running = true;
 
 	//set by modules
 	public static L298NDriver l298NDriver;
 
-	TreeMap<String,CarModule> modules;
-	String currentModule;
+	TreeMap<String,CarModule> modules = new TreeMap<String, CarModule>();
 
 	CarServer server;
 
@@ -36,8 +50,10 @@ public class Car {
 	 *
 	 * main REQUEST:
 	 * {
-	 *      module: (off, manual, etc.)// Required for write operations. Specifies module to be used
-	 *      moduleData: // Optional - updates specified module. See module for more documentation
+	 *      modules: (off, manual, etc.)// Required for write operations. Specifies modules that should be on
+	 *          Ex: ["manual","honk","info"]
+	 *      (moduleName): // Sends data to specified module. See module for more documentation
+	 *          Example: honk:honk would send honk to the honk module
 	 *
 	 *      info: info // optional - if sent by client, the server will send back the "info" data
 	 *      kill: kill // If "kill" key sent, the server software ends. Before calling, maybe set manualSpeed to 0,0 and receive a 200
@@ -45,7 +61,7 @@ public class Car {
 	 * }
 	 * main RESPONSE:
 	 * {
-	 *      moduleData: //optional - Whatever the module is responding with
+	 *      moduleData: //optional - Whatever the module is responding with, if anything
 	 *      info: // Optional. Sent when requested. Sends back what request would be necessary to put the car in its current state
 	 *          state: (off, manual, etc.)
 	 *          manualSpeeds: //containing data you would expect to put it in this state
@@ -97,41 +113,43 @@ public class Car {
 				e.printStackTrace();
 			}
 		}
+
 		/**
 		 * The CarController protocol implementation
-		 * @param controls the client input controls
+		 * @param request the client input controls
 		 * @return the server response
 		 * */
-		JSONObject applyControls(JSONObject controls) {
+		JSONObject applyControls(JSONObject request) {
 			JSONObject ret = new JSONObject();
 			//by default returns 404 (operation not found, in this case), but could be overwritten
-			ret.put("status",404);
+			ret.put("code",404);
 
-			if (ret.has("module")) {
+			if (request.has("modules")) {
 				//change modules as necessary
-				if (!ret.getString("module").equals(currentModule)) {
-					String newModule = ret.getString("module");
-					if (!modules.containsKey(newModule)) {
-						System.err.println("Unknown module "+newModule);
-						return ret;
-					}
-					System.out.println("Changing modules to "+newModule);
-					modules.get(currentModule).disable();
-					currentModule = newModule;
-					modules.get(currentModule).enable();
+				JSONArray requestedModulesJSON = request.getJSONArray("modules");
+				String[] requestedModulesArr = new String[requestedModulesJSON.length()];
+				for (int m=0;m<requestedModulesArr.length;m++) {
+					requestedModulesArr[m] = requestedModulesJSON.getString(m);
 				}
-				//update modules by given inputs
-				if (ret.has("moduleData")) {
-					JSONObject moduleResponse = modules.get(currentModule).moduleInput(ret.getJSONObject("moduleData"));
-					if (moduleResponse != null) {
-						ret.put("module",moduleResponse);
+				List<String> requestedModulesList = Arrays.asList(requestedModulesArr);
+
+				for(Map.Entry<String, CarModule> module : modules.entrySet()) {
+					//enable all disabled modules that were requested to be enabled
+					if (!module.getValue().isEnabled() && requestedModulesList.contains(module.getKey())) module.getValue().enable();
+					//disable all enabled modules that were requested to be disabled
+					if (module.getValue().isEnabled() && !requestedModulesList.contains(module.getKey())) module.getValue().disable();
+					//process all module input
+					if (request.has(module.getKey())) {
+						//todo might not work?
+						module.getValue().moduleInput(request.getJSONObject(module.getKey()));
 					}
 				}
+
 			}
 
-			if (controls.has("kill")) {
-				System.out.println("KILL REQUEST SENT, adios");
-				done();
+			if (!DEBUG) {
+				ret.remove("info");
+				ret.remove("error");
 			}
 
 			return ret;
@@ -140,20 +158,30 @@ public class Car {
 
 	Car() {
 		System.out.println("Adding modules");
-		modules.put("manual",new Manual());
-		modules.put("off",new Off());
+		//put every potential module here
+
+//		modules.put(Off.getName(),new Off());
+		modules.put(Manual.getName(),new Manual());
+		modules.put(Horn.getName(), new Horn(3));
+		modules.put(Kill.getName(), new Kill());
+		modules.put(HC_SR04.getName(), new HC_SR04(-1,0));
+		modules.get(HC_SR04.getName()).enable();
+
 		System.out.println("Initializing driver");
 		l298NDriver = new L298NDriver(25,27,28,29,26,23,true,false);
 		System.out.println("Initializing JSON Server");
 		server = new CarServer();
+		System.out.println("JSON server initialized");
 	}
 
-	void done() {
+	public static void done() {
 		running = false;
 		if (l298NDriver != null) l298NDriver.stop();
+		sleep(100);
+		System.exit(0);
 	}
 
-	private void sleep(int ms) {
+	private static void sleep(int ms) {
 		try {Thread.sleep(ms);} catch (InterruptedException e) {e.printStackTrace();}
 	}
 
