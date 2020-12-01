@@ -53,7 +53,6 @@ public class L298NDriver {
 				d2.high();
 			}
 			int setPwmTo = clamp(Math.abs(power),0,MAX_MOTOR_POWERS);
-			System.out.println("Setting PWM to "+setPwmTo);
 			SoftPwm.softPwmWrite(pwm,setPwmTo);
 		}
 	}
@@ -63,17 +62,22 @@ public class L298NDriver {
 	}
 
 	/**
-	 * @param rightWheel true if setting right output, false if setting left output
+	 * Calls setLeftPowerLevel and setRightPowerLevel, respectively
+	 * @see this.setLeftPowerLevel()
+	 * @see this.setRightPowerLevel()
+	 *
 	 * */
-	public void setPowerLevel(boolean rightWheel, int power) {
-		if (rightWheel) {
-			setPowerLevel(power, in3, in4, enbLoc);
-		} else {
-			setPowerLevel(power, in1, in2, enaLoc);
-		}
+	public void setPowerLevels(int left, int right) {
+		setLeftPowerLevel(left);
+		setRightPowerLevel(right);
 	}
-	public void setLeftPowerLevel(int power) {setPowerLevel(false, power);}
-	public void setRightPowerLevel(int power) {setPowerLevel(true, power);}
+
+	public void setLeftPowerLevel(int power) {
+		setPowerLevel(power, in1, in2, enaLoc);
+	}
+	public void setRightPowerLevel(int power) {
+		setPowerLevel(power, in3, in4, enbLoc);
+	}
 	public void stop() {
 		setLeftPowerLevel(0);
 		setRightPowerLevel(0);

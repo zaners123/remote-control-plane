@@ -10,6 +10,7 @@ public abstract class JsonServer extends Module {
 	int port;
 	DatagramSocket sock;
 	JsonServer(int port) {
+		System.out.println("Initializing JSON Server");
 		this.port = port;
 		retrySetup: while(true) {
 			try {
@@ -20,6 +21,7 @@ public abstract class JsonServer extends Module {
 				e.printStackTrace();
 			}
 		}
+		System.out.println("JSON server initialized");
 	}
 	DatagramPacket getPacket() throws IOException {
 		DatagramPacket packet = new DatagramPacket(new byte[1024],1024);

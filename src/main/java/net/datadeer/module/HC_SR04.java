@@ -16,24 +16,39 @@ import java.util.concurrent.TimeUnit;
  * */
 public class HC_SR04 extends Module {
 
-	public String getName() {return "ultrasonic";}
-
+	public static final String NAME = "ultrasonic";
 	GpioPinDigitalOutput trigger;
 	GpioPinDigitalInput echo;
 	boolean shouldScan = false;
 	GpioPinListenerDigital echoListener;
 	net.datadeer.common.Heart heart;
-
 	private final static ArrayList<DepthListener> externalListeners = new ArrayList<>();
 
+	public String getName() {return NAME;}
+
 	void beat() {
-//		System.out.println("HC_SR04 Sensor Beat");
-		trigger.pulse(10, PinState.HIGH, TimeUnit.MICROSECONDS);
-//		Common.sleep(5000);
+		try {
+			trigger.pulse(10, PinState.HIGH, TimeUnit.MICROSECONDS);
+		} catch (RuntimeException e) {
+			System.out.println("Trigger throwin runtimes again");
+		}
+	}
+
+	/**
+	 * This makes sure the sensor is only on when it is needed.
+	 * */
+	private void onUpdateNumberOfListeners() {
+		if (externalListeners.isEmpty()) {
+			echo.removeListener(echoListener);
+			heart.stop();
+		} else {
+			echo.addListener(echoListener);
+			heart.start();
+		}
 	}
 
 	public HC_SR04(int trigger, int echo) {
-		heart = new Heart(this::beat,50);//at least 20
+		heart = new Heart(this::beat,1000/25);
 		System.out.println("ULTRASONIC SENSOR GENERATED");
 		this.trigger = PinController.getDigitalGPIOOutput(trigger);
 		this.echo = PinController.getDigitalGPIOInput(echo);
@@ -44,9 +59,7 @@ public class HC_SR04 extends Module {
 			public void handleGpioPinDigitalStateChangeEvent(GpioPinDigitalStateChangeEvent event) {
 				//get time first
 				long now = System.nanoTime();
-
 				boolean signalStarted = event.getState().isHigh();
-
 				if (signalStarted) {
 					heldSince = now;
 				} else {
@@ -59,10 +72,7 @@ public class HC_SR04 extends Module {
 				}
 			}
 		};
-
-		//testing accuracy
-		addListener((d)-> System.out.printf("Meters away %f, Nanoseconds passed: %d\n",scanToMeters(d),d));
-
+//		addListener((d)-> System.out.printf("Meters away %f, Nanoseconds passed: %d\n",scanToMeters(d),d));
 	}
 
 	interface DepthListener {
@@ -71,21 +81,28 @@ public class HC_SR04 extends Module {
 
 	public static double scanToMeters(long timeHeld) {
 		//times speed of sound divided by (had to go there and back so 2) divided by (nanosecond to second)
-		return ((double)(timeHeld * 343))/2_000_000_000;
+		double meters = ((double)(timeHeld * 343))/2_000_000_000;
+		//scanner seems to always be at at least .1 even with something immediately in front of it
+		meters -= 0.1;
+		return meters;
 	}
 
-	void addListener(DepthListener l) {if (l!=null) externalListeners.add(l);}
-	void removeListener(DepthListener l) {if (l!=null) externalListeners.remove(l);}
+	void addListener(DepthListener l) {
+		if (l!=null) externalListeners.add(l);
+		onUpdateNumberOfListeners();
+	}
+	void removeListener(DepthListener l) {
+		if (l!=null) externalListeners.remove(l);
+		onUpdateNumberOfListeners();
+	}
 
 	@Override public void onEnable() {
 		System.out.println("ULTRASONIC SENSOR ENABLED");
 		heart.start();
 		shouldScan = true;
-		echo.addListener(echoListener);
 	}
 	@Override public void onDisable() {
 		heart.stop();
 		shouldScan = false;
-		echo.removeListener(echoListener);
 	}
 }

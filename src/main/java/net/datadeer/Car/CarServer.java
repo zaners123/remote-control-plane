@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.net.DatagramPacket;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * CarController Protocol v1.0.0
@@ -36,16 +37,18 @@ import java.util.List;
  *     	status: Required. (formatted like HTTP Status code) // returned by server, usually returns 200 or 400
  * }
  * */
-class CarServer extends JsonServer {
+public class CarServer extends JsonServer {
 
 	boolean running;
 
+	public static final int PORT = 50303;
+	public static final String NAME = "CarJSONServer";
+
 	CarServer() {
-		super(50303);
+		super(PORT);
 	}
 
-	@Override public String getName() {return "CarJSONServer";}
-
+	@Override public String getName() {return NAME;}
 
 	@Override
 	protected void onEnable() {
@@ -62,6 +65,7 @@ class CarServer extends JsonServer {
 
 	/**
 	 * Starts a new thread that listens for clients
+	 * TODO replace with packet listener
 	 * */
 	void listenForClients() {
 		new Thread(() -> {
@@ -82,11 +86,11 @@ class CarServer extends JsonServer {
 		String requestStr = new String(requestPacket.getData());
 		JSONObject request = new JSONObject(requestStr);
 		JSONObject.testValidity(request);
-		System.out.println("INPUT: "+request.toString());
+//		System.out.println("INPUT: "+request.toString());
 		JSONObject response = applyControls(request);
-		System.out.println("OUTPUT: "+response.toString());
+//		System.out.println("OUTPUT: "+response.toString());
 		JSONObject.testValidity(response);
-		byte[] responseData = response.toString().getBytes();
+		byte[] responseData = (response.toString()+"\0").getBytes();
 		DatagramPacket responsePacket = new DatagramPacket(
 				responseData,
 				responseData.length,
@@ -107,9 +111,6 @@ class CarServer extends JsonServer {
 	 * */
 	JSONObject applyControls(JSONObject request) {
 		JSONObject response = new JSONObject();
-		//by default returns 404 (operation not found, in this case), but could be overwritten
-		response.put("code",404);
-
 		if (request.has("modules")) {
 			//change modules as necessary
 			JSONArray requestedModulesJSON = request.getJSONArray("modules");
@@ -136,6 +137,7 @@ class CarServer extends JsonServer {
 					}
 				}
 			});
+			response.put("modules",getModuleGroup().getEnabledModules().collect(Collectors.joining(",")));
 		}
 
 		if (!Car.DEBUG) {

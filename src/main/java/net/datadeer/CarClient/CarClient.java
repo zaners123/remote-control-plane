@@ -1,13 +1,16 @@
 package net.datadeer.CarClient;
 
+import net.datadeer.Car.CarServer;
 import net.datadeer.module.*;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.font.TextLayout;
 import java.io.IOException;
 import java.net.*;
 import java.util.TreeSet;
@@ -21,10 +24,10 @@ import java.util.concurrent.TimeUnit;
 
 public class CarClient {
 
-	private static boolean running = true;
 	private static final String ip = "192.168.0.252";
-	private static final int port = 50303;
-	private InetSocketAddress SEND_ADDR = new InetSocketAddress(ip, port);
+
+	private static boolean running = true;
+	private InetSocketAddress SEND_ADDR = new InetSocketAddress(ip, CarServer.PORT);
 //	private static final JSONObject KILL_OBJECT = new JSONObject().put("kill","kill");
 	private int manualPowerLevel = 100;
 	private final Font twentyFont = new Font("Default", Font.BOLD, 20);
@@ -65,13 +68,21 @@ public class CarClient {
 			left=manualPowerLevel;
 			right=-manualPowerLevel;
 		}
-		toSend = toSend.put(ModuleManual.NAME,new JSONObject()
-				.put("left",left)
-				.put("right",right)
-				.put("ms",100* ModuleGroup.TIME_MULTIPLIER)
-		);
-
-		sendRequest(toSend);
+		if (modulesEnabled.contains(ModuleManual.NAME)) {
+			toSend = toSend.put(ModuleManual.NAME,new JSONObject()
+					.put("left",left)
+					.put("right",right)
+					.put("ms",100* ModuleGroup.TIME_MULTIPLIER)
+			);
+		}
+		if (modulesEnabled.contains(ModuleSafeManual.NAME)) {
+			toSend = toSend.put(ModuleSafeManual.NAME, new JSONObject()
+					.put("left", left)
+					.put("right", right)
+					.put("ms", 100 * ModuleGroup.TIME_MULTIPLIER)
+			);
+		}
+		JSONObject returned = sendRequest(toSend);
 	}
 
 	class Panel extends JPanel {
@@ -85,6 +96,8 @@ public class CarClient {
 	}
 
 	CarClient() {
+		modulesEnabled.add(CarServer.NAME);
+		modulesEnabled.add(HC_SR04.NAME);
 		try {
 			sock = new DatagramSocket();
 		} catch (SocketException e) {
@@ -92,31 +105,32 @@ public class CarClient {
 			System.err.println("SOCK FAILED");
 			System.exit(1);
 		}
-
 		heart = Executors.newScheduledThreadPool(2);
 		heart.scheduleAtFixedRate(this::heartbeat, 0, 25* ModuleGroup.TIME_MULTIPLIER, TimeUnit.MILLISECONDS);
-
 		panel = new Panel();
-
 		JFrame disp = new JFrame("Plane Client (This is Laptop)");
+//		disp.setLayout(new BoxLayout(disp.getContentPane(), BoxLayout.PAGE_AXIS));
 		disp.setSize(1300, 700);
 		disp.addKeyListener(new KeyListener() {
 			@Override public void keyTyped(KeyEvent keyEvent) {}
 
 			@Override
 			public void keyPressed(KeyEvent keyEvent) {
-//				System.out.println("PRESSEDD");
 				keyUsed(keyEvent, true);
 			}
 
 			@Override
 			public void keyReleased(KeyEvent keyEvent) {
-//				System.out.println("RELEASEDDD");
 				keyUsed(keyEvent, false);
 			}
 		});
 		disp.setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+//		JPanel boxLayoutPanel = new JPanel();
+//		disp.add(new JButton("Use M to enage/disengage manual (allows WASD)"));
+//		disp.add(new JButton("Use WASD to move/rotate robot"));
+//		disp.add(new JButton("Type 0-9 to set top speed"));
 		disp.add(panel);
+//		disp.getContentPane().add(boxLayoutPanel, BorderLayout.CENTER);
 		disp.setVisible(true);
 	}
 
@@ -135,15 +149,21 @@ public class CarClient {
 			System.err.println("AH HECK THIS PACKET MIGHT BE TOO LARGE FOR UDP");
 		}
 		//todo should reuse socket
-		System.out.println("Sending "+request.toString());
+		System.out.println("TX:"+request.toString());
 		DatagramPacket packet = new DatagramPacket(requestData,requestData.length, SEND_ADDR);
 		try {
 			sock.setSoTimeout(1000);
 			sock.send(packet);
 			sock.receive(packet);
-			String response = new String(packet.getData());
-			System.out.println("CAR responded with "+response);
-			return new JSONObject(response);
+
+			byte[] data = packet.getData();
+			String response = new String(data, 0, Math.min(data.length,packet.getLength()));
+			System.out.println("RX:"+response);
+			try {
+				return new JSONObject(response);
+			} catch (JSONException e) {
+				return null;
+			}
 		} catch (SocketTimeoutException timeout) {
 			System.err.println("UDP timeout");
 		} catch (IOException e) {
@@ -158,18 +178,14 @@ public class CarClient {
 	}
 
 	void keyUsed (KeyEvent event, boolean pressed) {
-
 		int id = event.getKeyCode();
-
 		//already held
 		if (pressed && heldKeys.contains(id)) return;
-
 		if (pressed) {
 			heldKeys.add(id);
 		} else {
 			heldKeys.remove(id);
 		}
-
 		//control keys
 		switch (id) {
 			//speed settings
@@ -190,6 +206,13 @@ public class CarClient {
 					modulesEnabled.add(ModuleManual.NAME);
 				}
 				break;
+			case KeyEvent.VK_B://safe manual controls
+				if (event.isShiftDown()){
+					modulesEnabled.remove(ModuleSafeManual.NAME);
+				} else {
+					modulesEnabled.add(ModuleSafeManual.NAME);
+				}
+				break;
 			case KeyEvent.VK_N://automatic controls
 				if (event.isShiftDown()) {
 					modulesEnabled.remove(Automatic.NAME);
@@ -206,7 +229,6 @@ public class CarClient {
 				break;
 			case KeyEvent.VK_K:modulesEnabled.add(Kill.NAME);break;
 		}
-
 		//update from key
 		new Thread(this::heartbeat).start();
 	}

@@ -4,8 +4,8 @@ import org.json.JSONObject;
 
 public abstract class Module {
 
-	protected boolean enabled = false;
-	protected ModuleGroup group = null;
+	private boolean enabled = false;
+	private ModuleGroup group = null;
 
 	public abstract String getName();
 

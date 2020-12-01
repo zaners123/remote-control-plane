@@ -33,20 +33,20 @@ public class ModuleManual extends Module {
 	public JSONObject moduleInput(JSONObject request) {
 		JSONObject ret = new JSONObject();
 		//have it stop driving when the countdown hits, using something like a clock and if(timeStarted+ms<system.curtimems) stop
-		if (request.has("ms")) {
+		if (request.has("ms") && request.has("left") && request.has("right")) {
+			int leftPower = request.getInt("left");
+			int rightPower = request.getInt("right");
+
 			int ms = request.getInt("ms");
-			if (request.has("left")) {
-				driver.setLeftPowerLevel(request.getInt("left"));
-				stopLeftAt = System.currentTimeMillis() + ms;
-				ret.put("left", request.getInt("left"));
-			}
-			if (request.has("right")) {
-				driver.setRightPowerLevel(request.getInt("right"));
-				stopRightAt = System.currentTimeMillis() + ms;
-				ret.put("right", request.getInt("right"));
-			}
-			heartbeat();
+			driver.setLeftPowerLevel(leftPower);
+			stopLeftAt = System.currentTimeMillis() + ms;
+			ret.put("left", leftPower);
+
+			driver.setRightPowerLevel(rightPower);
+			stopRightAt = System.currentTimeMillis() + ms;
+			ret.put("right", rightPower);
 		}
+		heartbeat();
 		return ret;
 	}
 
@@ -58,7 +58,9 @@ public class ModuleManual extends Module {
 	}
 	@Override
 	public void onDisable() {
-		heart.shutdown();
+		if (heart!=null) {
+			heart.shutdown();
+		}
 	}
 	void heartbeat() {
 		if (stopLeftAt!=0 && System.currentTimeMillis() >= stopLeftAt) {
